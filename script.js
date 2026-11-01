@@ -78,14 +78,69 @@ async function createRoom(){
   }catch(e){console.error(e);toast(e.message||"Gagal membuat room.");}finally{setBusy(false);}
 }
 async function joinRoom(){
-  if(busy)return;const code=$("roomCodeInput").value.trim().toUpperCase(),name=$("roomNameInput").value.trim().slice(0,16)||username;
-  if(!/^[A-HJ-NP-Z2-9]{5}$/.test(code))return toast("Kode room harus 5 karakter.");
+  if(busy)return;
+
+  const code=$("roomCodeInput").value.trim().toUpperCase();
+  const name=$("roomNameInput").value.trim().slice(0,16)||username;
+
+  if(!/^[A-HJ-NP-Z2-9]{5}$/.test(code))
+    return toast("Kode room harus 5 karakter.");
+
   setBusy(true);
+
   try{
-    const r=await runTransaction(roomRef(code),v=>{if(!v||v.status!=="waiting"||v.hostUid===currentUser.uid||(v.guestUid&&v.guestUid!==currentUser.uid))return;return {...v,guestUid:currentUser.uid,players:{...v.players,[currentUser.uid]:{name,symbol:"O"}}};});
-    if(!r.committed)throw Error("Room tidak ditemukan, sudah dimulai, atau sudah penuh.");
-    roomCode=code;role="guest";listenRoom();toast("Berhasil bergabung!");
-  }catch(e){console.error(e);toast(e.message||"Gagal bergabung.");}finally{setBusy(false);}
+    // Periksa kondisi room sebelum join
+    const snap = await get(roomRef(code));
+
+    if(!snap.exists())
+      throw Error("Room tidak ditemukan di database.");
+
+    const v = snap.val();
+
+    if(v.status !== "waiting")
+      throw Error("Room sudah dimulai atau sudah selesai.");
+
+    if(v.hostUid === currentUser.uid)
+      throw Error("Lu tidak bisa join room milik akun sendiri.");
+
+    if(v.guestUid && v.guestUid !== currentUser.uid)
+      throw Error("Room sudah penuh.");
+
+    // Tetap gunakan transaction untuk mencegah dua guest masuk bersamaan
+    const r = await runTransaction(roomRef(code),v=>{
+      if(!v || v.status !== "waiting" ||
+         v.hostUid === currentUser.uid ||
+         (v.guestUid && v.guestUid !== currentUser.uid)){
+        return;
+      }
+
+      return {
+        ...v,
+        guestUid: currentUser.uid,
+        players:{
+          ...v.players,
+          [currentUser.uid]:{
+            name,
+            symbol:"O"
+          }
+        }
+      };
+    });
+
+    if(!r.committed)
+      throw Error("Room berubah atau sudah diisi pemain lain. Coba lagi.");
+
+    roomCode=code;
+    role="guest";
+    listenRoom();
+    toast("Berhasil bergabung!");
+
+  }catch(e){
+    console.error("JOIN ROOM ERROR:",e);
+    toast(e.message || "Gagal bergabung.");
+  }finally{
+    setBusy(false);
+  }
 }
 function listenRoom(){
   if(roomUnsub)roomUnsub();$("roomCodeDisplay").textContent=roomCode;show("lobbyScreen");

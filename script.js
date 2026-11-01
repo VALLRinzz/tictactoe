@@ -23,7 +23,20 @@ function emailAlias(name){return `${name}@tictactoe.local`;}
 function makeCode(){let s="";for(let i=0;i<5;i++)s+=CHARS[Math.floor(Math.random()*CHARS.length)];return s;}
 function roomRef(code=roomCode){return ref(db,`ticTacToeRooms/${code}`);}
 function profileRef(uid=currentUser?.uid){return ref(db,`profiles/${uid}`);}
-function winner(board){for(const [a,b,c] of WIN_LINES)if(board[a]&&board[a]===board[b]&&board[a]===board[c])return board[a];return board.every(Boolean)?"draw":null;}
+function normalizeBoard(value){
+  // Realtime Database can return an array as an object, especially when
+  // null array entries were omitted during storage.
+  if(Array.isArray(value)) return Array.from({length:9},(_,i)=>value[i]||null);
+  if(typeof value === "string") return Array.from({length:9},(_,i)=>value[i]==="X"||value[i]==="O"?value[i]:null);
+  if(value && typeof value === "object") return Array.from({length:9},(_,i)=>value[i]||value[String(i)]||null);
+  return Array(9).fill(null);
+}
+function storedBoard(board){
+  // Store empty cells as empty strings, not null. RTDB deletes null children
+  // and may turn an all-null array into an empty object.
+  return normalizeBoard(board).map(cell=>cell||"");
+}
+function winner(board){board=normalizeBoard(board);for(const [a,b,c] of WIN_LINES)if(board[a]&&board[a]===board[b]&&board[a]===board[c])return board[a];return board.every(Boolean)?"draw":null;}
 function playTone(freq=600,duration=.11,type="sine"){try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;audioCtx ||= new C();if(audioCtx.state==="suspended")audioCtx.resume();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(.0001,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.09,audioCtx.currentTime+.015);g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+duration);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+duration+.02);}catch(e){console.warn(e);}}
 function soundMove(s){playTone(s==="X"?650:470,.09);}
 function setBusy(v){busy=v;["authSubmitBtn","createRoomBtn","joinRoomBtn"].forEach(id=>{if($(id))$(id).disabled=v;});}
@@ -71,7 +84,7 @@ async function createRoom(){
   if(busy)return;const name=$("roomNameInput").value.trim().slice(0,16)||username;setBusy(true);
   try{
     let code=null;
-    for(let i=0;i<10;i++){const c=makeCode(),initial={hostUid:currentUser.uid,guestUid:null,status:"waiting",board:Array(9).fill(null),turnUid:currentUser.uid,createdAt:Date.now(),matchId:`tt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,players:{[currentUser.uid]:{name,symbol:"X"}}};
+    for(let i=0;i<10;i++){const c=makeCode(),initial={hostUid:currentUser.uid,guestUid:null,status:"waiting",board:Array(9).fill(""),turnUid:currentUser.uid,createdAt:Date.now(),matchId:`tt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,players:{[currentUser.uid]:{name,symbol:"X"}}};
       const r=await runTransaction(roomRef(c),v=>v===null?initial:undefined);if(r.committed){code=c;break;}}
     if(!code)throw Error("Tidak berhasil membuat room. Coba lagi.");
     roomCode=code;role="host";listenRoom();toast("Room berhasil dibuat!");
@@ -79,68 +92,40 @@ async function createRoom(){
 }
 async function joinRoom(){
   if(busy)return;
-
   const code=$("roomCodeInput").value.trim().toUpperCase();
   const name=$("roomNameInput").value.trim().slice(0,16)||username;
-
-  if(!/^[A-HJ-NP-Z2-9]{5}$/.test(code))
-    return toast("Kode room harus 5 karakter.");
-
+  if(!/^[A-HJ-NP-Z2-9]{5}$/.test(code))return toast("Kode room harus 5 karakter.");
+  if(!currentUser)return toast("Silakan login terlebih dahulu.");
   setBusy(true);
-
   try{
-    // Periksa kondisi room sebelum join
-    const snap = await get(roomRef(code));
-
-    if(!snap.exists())
-      throw Error("Room tidak ditemukan di database.");
-
-    const v = snap.val();
-
-    if(v.status !== "waiting")
-      throw Error("Room sudah dimulai atau sudah selesai.");
-
-    if(v.hostUid === currentUser.uid)
-      throw Error("Lu tidak bisa join room milik akun sendiri.");
-
-    if(v.guestUid && v.guestUid !== currentUser.uid)
-      throw Error("Room sudah penuh.");
-
-    // Tetap gunakan transaction untuk mencegah dua guest masuk bersamaan
-    const r = await runTransaction(roomRef(code),v=>{
-      if(!v || v.status !== "waiting" ||
-         v.hostUid === currentUser.uid ||
-         (v.guestUid && v.guestUid !== currentUser.uid)){
+    // Read the room first. This also primes the local RTDB cache before
+    // the transaction callback is evaluated.
+    const initialSnap=await get(roomRef(code));
+    if(!initialSnap.exists())throw Error("Room tidak ditemukan.");
+    const initialRoom=initialSnap.val();
+    let usedInitialRoom=false;
+    const result=await runTransaction(roomRef(code),value=>{
+      // RTDB may invoke the updater once with null before its server value
+      // is available locally. Use the just-read room for that first pass.
+      let current=value;
+      if(current===null&&!usedInitialRoom){
+        current=initialRoom;
+        usedInitialRoom=true;
+      }else if(current===null){
         return;
       }
-
-      return {
-        ...v,
-        guestUid: currentUser.uid,
-        players:{
-          ...v.players,
-          [currentUser.uid]:{
-            name,
-            symbol:"O"
-          }
-        }
-      };
+      if(!current||current.status!=="waiting"||current.hostUid===currentUser.uid||
+         (current.guestUid&&current.guestUid!==currentUser.uid))return;
+      const players={...(current.players||{})};
+      players[currentUser.uid]={name,symbol:"O"};
+      return {...current,guestUid:currentUser.uid,players};
     });
-
-    if(!r.committed)
-      throw Error("Room berubah atau sudah diisi pemain lain. Coba lagi.");
-
-    roomCode=code;
-    role="guest";
-    listenRoom();
-    toast("Berhasil bergabung!");
-
+    if(!result.committed)throw Error("Room sudah dimulai, penuh, atau tidak bisa diikuti.");
+    roomCode=code;role="guest";listenRoom();toast("Berhasil bergabung!");
   }catch(e){
     console.error("JOIN ROOM ERROR:",e);
-    toast(e.message || "Gagal bergabung.");
-  }finally{
-    setBusy(false);
-  }
+    toast(e.message||"Gagal bergabung ke room.");
+  }finally{setBusy(false);}
 }
 function listenRoom(){
   if(roomUnsub)roomUnsub();$("roomCodeDisplay").textContent=roomCode;show("lobbyScreen");
@@ -160,9 +145,10 @@ function renderLobby(){
 }
 async function startMatch(){
   if(role!=="host"||!room?.guestUid)return;
-  await runTransaction(roomRef(),v=>{if(!v||v.status!=="waiting"||!v.guestUid||v.hostUid!==currentUser.uid)return;return {...v,status:"playing",board:Array(9).fill(null),turnUid:v.hostUid,winnerUid:null,finishReason:null,rematchVotes:null,matchId:`tt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`};});
+  await runTransaction(roomRef(),v=>{if(!v||v.status!=="waiting"||!v.guestUid||v.hostUid!==currentUser.uid)return;return {...v,status:"playing",board:Array(9).fill(""),turnUid:v.hostUid,winnerUid:null,finishReason:null,rematchVotes:null,matchId:`tt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`};});
 }
 function renderBoard(board,enabled,winningLine=[]){
+  board=normalizeBoard(board);
   document.querySelectorAll(".cell").forEach((b,i)=>{const v=board[i]||"";b.textContent=v;b.className="cell";if(v)b.classList.add(v.toLowerCase());if(winningLine.includes(i))b.classList.add("win");b.disabled=!enabled||!!v;});
 }
 function renderOnlineGame(){
@@ -171,21 +157,23 @@ function renderOnlineGame(){
   $("gameNameX").textContent=x?.name||"PLAYER X";$("gameNameO").textContent=o?.name||"PLAYER O";$("gameScoreX").textContent="HOST · X";$("gameScoreO").textContent="GUEST · O";
   $("turnBanner").textContent=myTurn?`GILIRAN KAMU · ${mine}`:`GILIRAN ${room.players?.[room.turnUid]?.name||"LAWAN"}`;
   $("gameMessage").textContent=myTurn?"Giliran kamu. Pilih kotak kosong.":`Menunggu ${room.players?.[room.turnUid]?.name||"lawan"}...`;
-  renderBoard(room.board||Array(9).fill(null),myTurn&&room.status==="playing");
+  renderBoard(normalizeBoard(room.board),myTurn&&room.status==="playing");
 }
 async function onlineMove(index){
   if(!roomCode||!room||room.status!=="playing")return;
   try{
     const r=await runTransaction(roomRef(),v=>{
-      if(!v||v.status!=="playing"||v.turnUid!==currentUser.uid||v.board?.[index])return;
-      const board=[...(v.board||Array(9).fill(null))],symbol=v.players?.[currentUser.uid]?.symbol;if(!symbol)return;
-      board[index]=symbol;const out=winner(board);
-      return {...v,board,turnUid:out?null:(symbol==="X"?v.guestUid:v.hostUid),status:out?"finished":"playing",winnerUid:out==="draw"?null:out?currentUser.uid:null,finishReason:out||null,finishedAt:out?Date.now():null};
+      if(!v||v.status!=="playing"||v.turnUid!==currentUser.uid)return;
+      const board=normalizeBoard(v.board),symbol=v.players?.[currentUser.uid]?.symbol;
+      if(!symbol||board[index])return;
+      board[index]=symbol;
+      const out=winner(board);
+      return {...v,board:storedBoard(board),turnUid:out?null:(symbol==="X"?v.guestUid:v.hostUid),status:out?"finished":"playing",winnerUid:out==="draw"?null:out?currentUser.uid:null,finishReason:out||null,finishedAt:out?Date.now():null};
     });
     if(r.committed)soundMove(room.players?.[currentUser.uid]?.symbol||"X");
   }catch(e){console.error(e);toast("Langkah gagal disimpan.");}
 }
-function winningCells(board){for(const line of WIN_LINES){const [a,b,c]=line;if(board[a]&&board[a]===board[b]&&board[a]===board[c])return line;}return[];}
+function winningCells(board){board=normalizeBoard(board);for(const line of WIN_LINES){const [a,b,c]=line;if(board[a]&&board[a]===board[b]&&board[a]===board[c])return line;}return[];}
 function renderOnlineFinished(){
   const x=room.players?.[room.hostUid],o=room.players?.[room.guestUid],draw=room.finishReason==="draw"||!room.winnerUid,won=room.winnerUid===currentUser.uid;
   $("winnerTitle").textContent=draw?"HASIL SERI!":`${room.players?.[room.winnerUid]?.name||"PEMAIN"} MENANG!`;
@@ -197,7 +185,7 @@ function renderOnlineFinished(){
 async function voteRematch(){if(!roomCode||room?.status!=="finished")return;try{await set(ref(db,`ticTacToeRooms/${roomCode}/rematchVotes/${currentUser.uid}`),true);toast("Permintaan rematch dikirim.");}catch(e){toast("Gagal meminta rematch.");}}
 async function checkRematch(){
   if(role!=="host"||room?.status!=="finished"||!room.guestUid||!room.rematchVotes?.[room.hostUid]||!room.rematchVotes?.[room.guestUid])return;
-  await runTransaction(roomRef(),v=>{if(!v||v.status!=="finished"||!v.rematchVotes?.[v.hostUid]||!v.rematchVotes?.[v.guestUid])return;return {...v,status:"playing",board:Array(9).fill(null),turnUid:v.hostUid,winnerUid:null,finishReason:null,finishedAt:null,rematchVotes:null,matchId:`tt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`};});
+  await runTransaction(roomRef(),v=>{if(!v||v.status!=="finished"||!v.rematchVotes?.[v.hostUid]||!v.rematchVotes?.[v.guestUid])return;return {...v,status:"playing",board:Array(9).fill(""),turnUid:v.hostUid,winnerUid:null,finishReason:null,finishedAt:null,rematchVotes:null,matchId:`tt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`};});
 }
 async function recordStats(won,draw,matchId){
   await runTransaction(profileRef(),p=>{

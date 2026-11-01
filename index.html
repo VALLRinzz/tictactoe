@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090b10">
+  <meta name="description" content="Tic Tac Toe Online — tantang teman atau bot.">
+  <title>TIC TAC TOE — ONLINE ARENA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#" id="brandHome"><span class="brand-mark">XO</span><span>TIC TAC<span class="gold"> TOE</span></span></a>
+      <div class="top-actions">
+        <span class="online-dot"></span><span class="online-label">ONLINE ARENA</span>
+        <span id="signedUser" class="signed-user hidden"></span>
+        <button id="logoutBtn" class="quiet-btn hidden">Keluar</button>
+      </div>
+    </header>
+
+    <section id="authScreen" class="screen auth-layout">
+      <div class="hero">
+        <div class="eyebrow"><i></i> STRATEGY. FOCUS. VICTORY.</div>
+        <h1>ONE BOARD.<br><span>ONE WINNER.</span></h1>
+        <p>Susun tiga simbol, kalahkan lawan, dan buktikan strategi terbaikmu.</p>
+        <div class="feature-tags"><span>✦ ONLINE DUEL</span><span>✦ VS BOT</span><span>✦ LEADERBOARD</span></div>
+      </div>
+      <div class="panel auth-panel">
+        <div class="panel-head"><div><small>PLAYER ACCESS</small><h2 id="authTitle">Masuk arena</h2></div><b>XO</b></div>
+        <div class="tabs"><button id="loginTab" class="tab active">LOGIN</button><button id="registerTab" class="tab">BUAT AKUN</button></div>
+        <label for="usernameInput">USERNAME</label>
+        <input id="usernameInput" class="field" maxlength="20" autocomplete="username" placeholder="Contoh: noval_09">
+        <label for="passwordInput">PASSWORD</label>
+        <input id="passwordInput" class="field" type="password" minlength="6" autocomplete="current-password" placeholder="Minimal 6 karakter">
+        <button id="authSubmitBtn" class="btn primary full">MASUK <span>↗</span></button>
+        <p id="authHint" class="hint">Gunakan username dan password akunmu.</p>
+        <p class="micro">Tidak perlu email. Akun tersimpan melalui Firebase Authentication.</p>
+      </div>
+    </section>
+
+    <section id="homeScreen" class="screen hidden">
+      <div class="welcome-row">
+        <div><div class="eyebrow"><i></i> WELCOME BACK</div><h1>LET'S <span>PLAY.</span></h1><p>Pilih mode permainanmu.</p></div>
+        <div class="profile-chip"><div class="profile-avatar">XO</div><div><small>PLAYER PROFILE</small><strong id="profileName">PLAYER</strong><span id="profileStats">0 pertandingan · 0 menang</span></div></div>
+      </div>
+      <div class="home-grid">
+        <article class="panel mode-card featured">
+          <div class="mode-icon">⌗</div><small>PLAY WITH FRIENDS</small><h2>Online Duel</h2>
+          <p>Buat room pribadi, bagikan kode, lalu tantang temanmu secara real-time.</p>
+          <button id="showOnlineBtn" class="btn primary">MAIN ONLINE <span>↗</span></button>
+        </article>
+        <article class="panel mode-card">
+          <div class="mode-icon bot-icon">⌘</div><small>SOLO PRACTICE</small><h2>Vs Computer</h2>
+          <p>Latih strategi melawan bot. Pilih tingkat kesulitan sebelum bermain.</p>
+          <label for="botDifficulty" class="compact-label">KESULITAN BOT</label>
+          <select id="botDifficulty" class="field"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select>
+          <button id="playBotBtn" class="btn secondary">MULAI LATIHAN <span>→</span></button>
+        </article>
+      </div>
+      <div class="dashboard-grid">
+        <article class="panel stats-panel"><div class="panel-title"><div><small>YOUR PERFORMANCE</small><h3>Statistik kamu</h3></div><span class="tiny-badge">TIC TAC TOE</span></div>
+          <div class="stats-grid"><div><strong id="statMatches">0</strong><span>PERTANDINGAN</span></div><div><strong id="statWins">0</strong><span>MENANG</span></div><div><strong id="statLosses">0</strong><span>KALAH</span></div><div><strong id="statDraws">0</strong><span>SERI</span></div></div>
+          <div class="rate-line"><span>WIN RATE</span><strong id="statRate">0%</strong></div><div class="rate-track"><i id="rateFill"></i></div>
+        </article>
+        <article class="panel leaderboard-panel"><div class="panel-title"><div><small>TOP PLAYERS</small><h3>Leaderboard</h3></div><button id="refreshLeaderboardBtn" class="quiet-btn">Refresh ↻</button></div>
+          <ol id="leaderboardList" class="leaderboard-list"><li>Memuat leaderboard...</li></ol>
+          <p class="micro">Peringkat ini khusus Tic Tac Toe dan tidak bercampur dengan Math Battle.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="onlineScreen" class="screen hidden narrow">
+      <button class="back-link" data-back="homeScreen">← KEMBALI</button>
+      <div class="section-head"><small>ONLINE MATCHMAKING</small><h1>Find your <span>rival.</span></h1><p>Buat room baru atau masukkan kode dari temanmu.</p></div>
+      <div class="panel room-entry">
+        <label for="roomNameInput">NAMA PEMAIN DI PERTANDINGAN</label><input id="roomNameInput" class="field" maxlength="16" placeholder="Nama pemain">
+        <button id="createRoomBtn" class="btn primary full">BUAT ROOM <span>↗</span></button>
+        <div class="or"><span>ATAU GABUNG ROOM</span></div>
+        <label for="roomCodeInput">KODE ROOM</label><input id="roomCodeInput" class="field code-field" maxlength="5" placeholder="A7K92">
+        <button id="joinRoomBtn" class="btn secondary full">GABUNG ROOM →</button>
+      </div>
+    </section>
+
+    <section id="lobbyScreen" class="screen hidden narrow">
+      <div class="section-head"><small>TIC TAC TOE · MATCHMAKING</small><h1>Ruang <span>XO.</span></h1><p>Bagikan kode ini kepada temanmu.</p></div>
+      <div class="panel room-code-panel"><small>KODE ROOM</small><div><strong id="roomCodeDisplay">-----</strong><button id="copyCodeBtn" class="copy-btn">COPY</button></div><span id="copyFeedback">KLIK COPY UNTUK MENYALIN</span></div>
+      <div class="panel lobby-panel">
+        <div class="lobby-player"><span class="symbol-x">X</span><div><small>PLAYER 1 · HOST</small><strong id="lobbyNameX">Menunggu...</strong></div><em>HOST</em></div>
+        <div class="lobby-player"><span class="symbol-o">O</span><div><small>PLAYER 2</small><strong id="lobbyNameO">Menunggu lawan...</strong></div><em id="guestState">WAITING</em></div>
+        <p id="lobbyMessage" class="hint">Menunggu pemain kedua bergabung...</p>
+        <button id="startMatchBtn" class="btn primary full hidden" disabled>MULAI PERTANDINGAN →</button>
+        <button id="leaveRoomBtn" class="quiet-btn full">KELUAR DARI ROOM</button>
+      </div>
+    </section>
+
+    <section id="gameScreen" class="screen hidden narrow">
+      <div class="game-head"><div><small id="gameModeLabel">LIVE MATCH</small><h2>THE <span>BOARD.</span></h2></div><div class="room-pill" id="gameRoomLabel">ONLINE</div></div>
+      <div class="panel game-panel">
+        <div class="players">
+          <div class="player-box"><span class="symbol-x">X</span><div><small>PLAYER X</small><strong id="gameNameX">PLAYER X</strong><em id="gameScoreX">0 MENANG</em></div></div>
+          <div class="versus">VS</div>
+          <div class="player-box right"><span class="symbol-o">O</span><div><small>PLAYER O</small><strong id="gameNameO">PLAYER O</strong><em id="gameScoreO">0 MENANG</em></div></div>
+        </div>
+        <div class="turn-banner" id="turnBanner">GILIRAN X</div>
+        <div id="gameBoard" class="board" aria-label="Papan Tic Tac Toe">
+          <button class="cell" data-index="0" aria-label="Kotak 1"></button><button class="cell" data-index="1" aria-label="Kotak 2"></button><button class="cell" data-index="2" aria-label="Kotak 3"></button>
+          <button class="cell" data-index="3" aria-label="Kotak 4"></button><button class="cell" data-index="4" aria-label="Kotak 5"></button><button class="cell" data-index="5" aria-label="Kotak 6"></button>
+          <button class="cell" data-index="6" aria-label="Kotak 7"></button><button class="cell" data-index="7" aria-label="Kotak 8"></button><button class="cell" data-index="8" aria-label="Kotak 9"></button>
+        </div>
+        <p id="gameMessage" class="hint center">Pilih kotak kosong untuk memulai.</p>
+        <button id="exitGameBtn" class="quiet-btn full">KELUAR DARI PERTANDINGAN</button>
+      </div>
+    </section>
+
+    <section id="finishedScreen" class="screen hidden narrow">
+      <div class="panel result-panel"><div class="result-trophy">✦</div><small>MATCH COMPLETE</small><h1 id="winnerTitle">X MENANG!</h1><p id="finalSummary">Pertandingan selesai.</p>
+        <div class="result-score"><div><small id="finalNameX">PLAYER X</small><strong id="finalScoreX">X</strong></div><b>:</b><div><small id="finalNameO">PLAYER O</small><strong id="finalScoreO">O</strong></div></div>
+        <button id="rematchBtn" class="btn primary full hidden">REMATCH ↻</button>
+        <button id="resultHomeBtn" class="btn secondary full">KEMBALI KE BERANDA</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <footer><span>© 2026 TIC TAC TOE ARENA</span><span>THINK AHEAD. WIN SMART.</span></footer>
+  </main>
+  <script type="module" src="script.js"></script>
+</body>
+</html>
